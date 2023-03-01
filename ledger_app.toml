@@ -1,0 +1,3 @@
+[rust-app]
+manifest-path = "fw/Cargo.toml"
+
