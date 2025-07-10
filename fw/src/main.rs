@@ -335,22 +335,20 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
 
     let mut render = false;
 
-    // Skip empty / short APDUs
-    if comm.rx < APDU_HEADER_LEN {
-        return false;
-    }
-
     // Read class and instruction
-    let (cla, ins) = (comm.apdu_buffer[0], comm.apdu_buffer[1]);
+    let apdu_header = comm.get_apdu_metadata();
+    let (cla, ins) = (apdu_header.cla, apdu_header.ins);
+
 
     // Handle generic and ledger standard commands
     match (cla, ins) {
         // Ledger standard application info
         (AppInfoReq::CLA | 0, AppInfoReq::INS) => {
             let r = AppInfoResp::new(APP_NAME, APP_VERSION, AppFlags::empty());
-            match r.encode(&mut comm.apdu_buffer) {
+            let mut apdu_buffer = [0u8;260];
+            match r.encode(&mut apdu_buffer) {
                 Ok(n) => {
-                    comm.tx = n;
+                    comm.append(&apdu_buffer[..n]);
                     comm.reply_ok();
                 }
                 Err(_e) => {
@@ -363,9 +361,10 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
         }
         // Ledger standard device info
         (DeviceInfoReq::CLA, DeviceInfoReq::INS) => {
-            match fetch_encode_device_info(&mut comm.apdu_buffer) {
+            let mut apdu_buffer = [0u8;260];
+            match fetch_encode_device_info(&mut apdu_buffer) {
                 Ok(n) => {
-                    comm.tx = n;
+                    comm.append(&apdu_buffer[..n]);
                     comm.reply_ok();
                 }
                 Err(_e) => {
@@ -386,9 +385,10 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
             flags.set(MobAppFlags::UNLOCKED, engine.is_unlocked());
 
             let r = MobAppInfoResp::new(MOB_PROTO_VERSION, APP_NAME, APP_VERSION, flags);
-            match r.encode(&mut comm.apdu_buffer) {
+            let mut apdu_buffer = [0u8;260];
+            match r.encode(&mut apdu_buffer) {
                 Ok(n) => {
-                    comm.tx = n;
+                    comm.append(&apdu_buffer[..n]);
                     comm.reply_ok();
                 }
                 Err(_e) => {
@@ -404,7 +404,6 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
 
     // Return error for other unhandled APDUs
     if cla != MOB_APDU_CLA {
-        comm.tx = 0;
         comm.reply(SyscallError::NotSupported);
         return false;
     }
@@ -412,7 +411,11 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
     // Handle engine / transaction commands
 
     // Decode APDUs to engine events
-    *evt = match Event::parse(ins, &comm.apdu_buffer[APDU_HEADER_LEN..]) {
+    let data = comm.get_data().unwrap_or_else(|_| {
+           // If no data is present, return an error
+        &[]
+    });
+    *evt = match Event::parse(ins, data) {
         Ok(v) => v,
         Err(_e) => {
             comm.reply(SyscallError::InvalidParameter);
@@ -433,7 +436,6 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
 
             // Return empty APDU to signify late response
             // TODO: check on how other apps do this
-            comm.tx = 0;
             comm.reply_ok();
 
             return true;
@@ -525,7 +527,8 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
     }
 
     // Encode engine output to response APDU
-    let n = match output.encode(&mut comm.apdu_buffer) {
+    let mut apdu_buffer = [0u8; 260];
+    let n = match output.encode(&mut apdu_buffer) {
         Ok(v) => v,
         Err(_e) => {
             comm.reply(SyscallError::Overflow);
@@ -534,7 +537,7 @@ fn handle_apdu<RNG: RngCore + CryptoRng>(
     };
 
     // Send response
-    comm.tx = n;
+    comm.append(&apdu_buffer[..n]);
     comm.reply_ok();
 
     // Return render flag
