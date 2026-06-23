@@ -372,7 +372,7 @@ jobs:
         curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
 
     - name: Fetch firmware artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ledger-mob-fw-${{ matrix.platform }}
         path: bin
@@ -411,7 +411,7 @@ jobs:
         echo "VERSION=$(git describe --dirty=+ --always --tags)" >> $GITHUB_ENV
 
     - name: Fetch firmware artifacts
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: ledger-mob-fw-${{ matrix.platform }}
         path: bin
