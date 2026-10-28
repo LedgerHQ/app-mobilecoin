@@ -84,8 +84,8 @@ pub async fn setup(seed: Option<String>) -> (GenericDriver, GenericHandle, Ledge
         // If we have a nanoapp env argument, use this directly
         (Ok(v), _) => v,
         // Otherwise look for target dir under NANOAPP_ROOT
-        (_, Model::NanoSP) => nanoapp_root.join("target/nanosplus/release/ledger-mob-fw"),
-        (_, Model::NanoX) => nanoapp_root.join("target/nanox/release/ledger-mob-fw"),
+        (_, Model::NanoSP) => nanoapp_root.join("target/nanosplus/release/app-mobilecoin"),
+        (_, Model::NanoX) => nanoapp_root.join("target/nanox/release/app-mobilecoin"),
         _ => unimplemented!("Could not determine nanoapp file"),
     };
 

@@ -2,7 +2,7 @@
 cargo-features = ["per-package-target"]
 
 [package]
-name = "ledger-mob-fw"
+name = "app-mobilecoin"
 description = "MobileCoin Ledger NanoApp"
 repository = "https://github.com/mobilecoinofficial/ledger-mob.git"
 version = "0.16.4"
@@ -79,7 +79,7 @@ toml = { version = "0.8", default-features = false, features = [ "parse" ] }
 [dev-dependencies]
 
 [[bin]]
-name = "ledger-mob-fw"
+name = "app-mobilecoin"
 path = "src/main.rs"
 required-features = [ "applet" ]
 

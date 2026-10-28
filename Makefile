@@ -62,42 +62,42 @@ $(DEVICES):
 
 # Run nano firmware under speculos
 $(addsuffix -run,$(NANO_DEVICES)): %-run:
-	docker run --rm -v $(shell pwd):/src -p5000:5000 -p1237:1237 $(SPECULOS_CONTAINER) --model $(SPECULOS_MODEL_$*) --display headless --apdu-port 1237 --api-port 5000 $(SPECULOS_ARGS) /src/fw/target/$*/release/ledger-mob-fw
+	docker run --rm -v $(shell pwd):/src -p5000:5000 -p1237:1237 $(SPECULOS_CONTAINER) --model $(SPECULOS_MODEL_$*) --display headless --apdu-port 1237 --api-port 5000 $(SPECULOS_ARGS) /src/fw/target/$*/release/app-mobilecoin
 
 # Run touch firmware under speculos
 $(addsuffix -run,$(TOUCH_DEVICES)): %-run:
-	docker run --rm -v $(shell pwd):/src -p5000:5000 -p1237:1237 -p41000:41000 $(SPECULOS_CONTAINER) --model $(SPECULOS_MODEL_$*) --display headless --apdu-port 1237 --api-port 5000 $(SPECULOS_TOUCH_ARGS) $(SPECULOS_ARGS) /src/fw/target/$*/release/ledger-mob-fw
+	docker run --rm -v $(shell pwd):/src -p5000:5000 -p1237:1237 -p41000:41000 $(SPECULOS_CONTAINER) --model $(SPECULOS_MODEL_$*) --display headless --apdu-port 1237 --api-port 5000 $(SPECULOS_TOUCH_ARGS) $(SPECULOS_ARGS) /src/fw/target/$*/release/app-mobilecoin
 
 # Build firmware and load it onto an attached device
 $(addsuffix -load,$(LOADABLE_DEVICES)): %-load:
 	cd fw && cargo ledger build $* --load
 
 # Convert ELF to HEX for loading
-fw/target/%/release/ledger-mob-fw.hex: %
-	arm-none-eabi-objcopy fw/target/$</release/ledger-mob-fw -O ihex $@
+fw/target/%/release/app-mobilecoin.hex: %
+	arm-none-eabi-objcopy fw/target/$</release/app-mobilecoin -O ihex $@
 
 # Package nanoapp to archive
-package-%: % fw/target/%/release/ledger-mob-fw.hex
-	mkdir -p target/ledger-mob-fw-$<
+package-%: % fw/target/%/release/app-mobilecoin.hex
+	mkdir -p target/app-mobilecoin-$<
 
-	cp fw/target/$</release/ledger-mob-fw.hex target/ledger-mob-fw-$<
-	cp fw/target/$</release/app_icon.gif target/ledger-mob-fw-$<
+	cp fw/target/$</release/app-mobilecoin.hex target/app-mobilecoin-$<
+	cp fw/target/$</release/app_icon.gif target/app-mobilecoin-$<
 
-	tar cvf ledger-mob-fw-$<.tgz \
+	tar cvf app-mobilecoin-$<.tgz \
 		-C target \
-		ledger-mob-fw-$<
+		app-mobilecoin-$<
 
 # Run firmware under speculos with QEMU debug connection
 nanosplus-debug:
-	docker run --rm -v $(shell pwd):/src -p5000:5000 -p1237:1237 $(SPECULOS_CONTAINER) --model nanosp --display headless --apdu-port 1237 --api-port 5000 $(SPECULOS_ARGS) -d target/nanosplus/release/ledger-mob-fw
+	docker run --rm -v $(shell pwd):/src -p5000:5000 -p1237:1237 $(SPECULOS_CONTAINER) --model nanosp --display headless --apdu-port 1237 --api-port 5000 $(SPECULOS_ARGS) -d /src/fw/target/nanosplus/release/app-mobilecoin
 
 # Launch GDB connecting to speculos QEMU
 nanosplus-gdb:
-	cd fw && rust-gdb target/nanosplus/release/ledger-mob-fw
+	cd fw && rust-gdb target/nanosplus/release/app-mobilecoin
 
 # Objdump to show disassembly of sample_main (see `sp` for stack allocation)
 objdump:
-	arm-none-eabi-objdump fw/target/nanosplus/release/ledger-mob-fw --disassemble=sample_main -S | head -n 20
+	arm-none-eabi-objdump fw/target/nanosplus/release/app-mobilecoin --disassemble=sample_main -S | head -n 20
 
 # Run linters
 lint: fmt clippy
@@ -109,7 +109,7 @@ fmt:
 clippy:
 	cargo clippy -p ledger-mob -p ledger-mob-apdu -p ledger-mob-core -p ledger-mob-tests --no-deps -- -D warnings
 # 	TODO: fix... something to do with target / build-std
-#	cd fw && cargo clippy -p ledger-mob-fw --no-deps -- -D warnings
+#	cd fw && cargo clippy -p app-mobilecoin --no-deps -- -D warnings
 
 # Apply linters
 fix: fmt-fix clippy-fix
@@ -120,7 +120,7 @@ fmt-fix:
 
 clippy-fix:
 	cargo clippy --fix --allow-dirty -p ledger-mob -p ledger-mob-apdu -p ledger-mob-core -p ledger-mob-tests --no-deps -- -D warnings
-	cd fw && cargo clippy --fix --target nanosplus --allow-dirty -p ledger-mob-fw --no-deps -- -D warnings
+	cd fw && cargo clippy --fix --target nanosplus --allow-dirty -p app-mobilecoin --no-deps -- -D warnings
 
 # Run MIRI checks
 # Notes:

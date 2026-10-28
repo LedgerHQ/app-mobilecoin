@@ -228,7 +228,7 @@ jobs:
     - name: Load ${{ matrix.platform }} FW cache
       uses: actions/cache/restore@v6
       with:
-        key: fw-${{ matrix.platform }}
+        key: fw-${{ matrix.platform }}-v2
         path: |
           ~/.cargo
           ./fw/target
@@ -244,26 +244,26 @@ jobs:
       if: ${{ github.ref == 'refs/heads/main' }}
       uses: actions/cache/save@v6
       with:
-        key: fw-${{ matrix.platform }}-${{ github.run_id }}
+        key: fw-${{ matrix.platform }}-v2-${{ github.run_id }}
         path: |
           ~/.cargo
           ./fw/target
 
     - name: Convert / Rename binary artifacts
       run: |
-        cp fw/target/${{ matrix.platform }}/release/ledger-mob-fw ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}
-        arm-none-eabi-objcopy -O ihex fw/target/${{ matrix.platform }}/release/ledger-mob-fw ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}.hex
+        cp fw/target/${{ matrix.platform }}/release/app-mobilecoin app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}
+        arm-none-eabi-objcopy -O ihex fw/target/${{ matrix.platform }}/release/app-mobilecoin app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}.hex
         # per-device install icon, selected by fw/build.rs from [package.metadata.ledger]
-        cp fw/target/${{ matrix.platform }}/release/app_icon.gif ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}.gif
+        cp fw/target/${{ matrix.platform }}/release/app_icon.gif app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}.gif
 
     - name: Upload firmware binary artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ledger-mob-fw-${{ matrix.platform }}
+        name: app-mobilecoin-${{ matrix.platform }}
         path: |
-          ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}
-          ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}.hex
-          ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}.gif
+          app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}
+          app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}.hex
+          app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}.gif
 
   # Build simulator tests
   build-tests:
@@ -338,7 +338,7 @@ jobs:
         echo "VERSION=$(git describe --dirty=+ --always --tags)" >> $GITHUB_ENV
         echo "DRIVER_MODE=docker" >> $GITHUB_ENV
         echo "MODEL=${{ matrix.platform }}" >> $GITHUB_ENV
-        echo "NANOAPP=$(pwd)/bin/ledger-mob-fw-${{ matrix.platform }}-$(git describe --dirty=+ --always --tags)" >> $GITHUB_ENV
+        echo "NANOAPP=$(pwd)/bin/app-mobilecoin-${{ matrix.platform }}-$(git describe --dirty=+ --always --tags)" >> $GITHUB_ENV
 
     - name: Configure rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -368,7 +368,7 @@ jobs:
     - name: Fetch firmware artifacts
       uses: actions/download-artifact@v8
       with:
-        name: ledger-mob-fw-${{ matrix.platform }}
+        name: app-mobilecoin-${{ matrix.platform }}
         path: bin
 
     - name: Run simulator tests
@@ -405,33 +405,33 @@ jobs:
     - name: Fetch firmware artifacts
       uses: actions/download-artifact@v8
       with:
-        name: ledger-mob-fw-${{ matrix.platform }}
+        name: app-mobilecoin-${{ matrix.platform }}
         path: bin
 
     - name: Setup package files
       run: |
-        mkdir -p ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}
-        cp bin/ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}.hex ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}/ledger-mob-fw.hex
-        cp bin/ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}.gif ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}/app_icon.gif
+        mkdir -p app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}
+        cp bin/app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}.hex app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}/app-mobilecoin.hex
+        cp bin/app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}.gif app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}/app_icon.gif
 
     - name: Build firmware archive
       run: |
-        tar cvf ledger-mob-fw-${{ matrix.platform }}.tgz \
-        ledger-mob-fw-${{ matrix.platform }}-${{ env.VERSION }}/
+        tar cvf app-mobilecoin-${{ matrix.platform }}.tgz \
+        app-mobilecoin-${{ matrix.platform }}-${{ env.VERSION }}/
 
     - name: Upload firmware package artifact
       uses: actions/upload-artifact@v7
       with:
-        name: ledger-mob-fw-${{ matrix.platform }}.tgz
-        path: ledger-mob-fw-${{ matrix.platform }}.tgz
+        name: app-mobilecoin-${{ matrix.platform }}.tgz
+        path: app-mobilecoin-${{ matrix.platform }}.tgz
 
     - name: Attach firmware package to release
       if: ${{ startsWith(github.ref, 'refs/tags/v') }}
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ledger-mob-fw-${{ matrix.platform }}.tgz
-        asset_name: ledger-mob-fw-${{ matrix.platform }}.tgz
+        file: app-mobilecoin-${{ matrix.platform }}.tgz
+        asset_name: app-mobilecoin-${{ matrix.platform }}.tgz
         tag: ${{ github.ref }}
         overwrite: true
 

@@ -48,6 +48,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7de8ce5e0f9f8d88245311066a578d72b7af3e7088f32783804676302df237e4"
 
 [[package]]
+name = "app-mobilecoin"
+version = "0.16.4"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "chrono",
+ "clear_on_drop",
+ "critical-section",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "embedded-alloc",
+ "emstr",
+ "encdec",
+ "getrandom",
+ "heapless",
+ "hex_fmt",
+ "hmac-sha512",
+ "image",
+ "ledger-mob-core",
+ "ledger-proto",
+ "ledger_device_sdk",
+ "libc",
+ "mc-core",
+ "portable-atomic",
+ "quote",
+ "rand_core",
+ "rlibc",
+ "rngcheck",
+ "strum",
+ "toml",
+ "x25519-dalek",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1068,40 +1102,6 @@ dependencies = [
  "strum",
  "x25519-dalek",
  "zeroize",
-]
-
-[[package]]
-name = "ledger-mob-fw"
-version = "0.16.4"
-dependencies = [
- "anyhow",
- "bytes",
- "chrono",
- "clear_on_drop",
- "critical-section",
- "curve25519-dalek",
- "ed25519-dalek",
- "embedded-alloc",
- "emstr",
- "encdec",
- "getrandom",
- "heapless",
- "hex_fmt",
- "hmac-sha512",
- "image",
- "ledger-mob-core",
- "ledger-proto",
- "ledger_device_sdk",
- "libc",
- "mc-core",
- "portable-atomic",
- "quote",
- "rand_core",
- "rlibc",
- "rngcheck",
- "strum",
- "toml",
- "x25519-dalek",
 ]
 
 [[package]]
