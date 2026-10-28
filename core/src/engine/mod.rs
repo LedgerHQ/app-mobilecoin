@@ -107,6 +107,19 @@ pub enum State {
     Complete,
 }
 
+impl State {
+    /// Check whether the current state should be considered idle (no current operations or pending approvals)
+    pub fn is_idle(&self) -> bool {
+        matches!(
+            self,
+            State::Init
+                | State::Complete
+                | State::Error
+                | State::Ident(IdentState::Approved | IdentState::Denied)
+        )
+    }
+}
+
 /// [Engine] provides hardware-independent support for MobileCoin wallet operations
 ///
 pub struct Engine<DRV: Driver, RNG: CryptoRngCore = OsRng> {
@@ -190,16 +203,19 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
         #[cfg(feature = "log")]
         log::debug!("event: {:02x?}", evt);
 
-        // Refuse to replace a request while it is pending user approval,
-        // the user must approve or deny (or the host cancel) first.
+        // Refuse to replace any type of request while awaiting user approval.
         // This is checked prior to the digest update so a rejected
         // event cannot alter the digest bound to the pending approval.
         match (self.state, evt) {
-            (State::Pending, Event::TxInit { .. }) => return Err(Error::ApprovalPending),
-            #[cfg(feature = "ident")]
-            (State::Ident(IdentState::Pending), Event::IdentSign { .. }) => {
-                return Err(Error::ApprovalPending)
-            }
+            // Allowed (idle) states for TxInit and IdentSign events
+            (s, Event::TxInit { .. } | Event::IdentSign { .. }) if s.is_idle() => (),
+            // Explicitly reject TxInit or IdentSign while approval is pending
+            (
+                State::Pending | State::Ident(IdentState::Pending),
+                Event::TxInit { .. } | Event::IdentSign { .. },
+            ) => return Err(Error::ApprovalPending),
+            // Also reject TxInit or IdentSign from any other states
+            (_, Event::TxInit { .. } | Event::IdentSign { .. }) => return Err(Error::InvalidState),
             _ => (),
         }
 
@@ -306,13 +322,13 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
             // Request identity proof
             #[cfg(feature = "ident")]
             (
-                State::Init | State::Ident(IdentState::Approved | IdentState::Denied),
+                s,
                 Event::IdentSign {
                     ident_index,
                     ident_uri,
                     challenge,
                 },
-            ) => {
+            ) if s.is_idle() => {
                 // Setup identity context
                 if self
                     .function
@@ -351,14 +367,15 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 return r;
             }
 
-            // Initialise transaction with private key and value
+            // Initialise transaction with private key (account index) and the number of rings to be used
+            // NOTE: transactions can only be initialised from idle states (Init, Complete, Error).
             (
-                _,
+                s,
                 Event::TxInit {
                     account_index,
                     num_rings,
                 },
-            ) => {
+            ) if s.is_idle() => {
                 // Set common transaction information
                 self.account_index = *account_index;
                 self.num_rings = *num_rings as usize;
@@ -373,6 +390,9 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 self.function.clear();
                 self.message.clear();
             }
+            // Reject transaction initialization in any other state
+            // NOTE: this is unreachable due to filtering above, but we'll keep the explicit rejection for clarity.
+            (_, Event::TxInit { .. }) => return Err(Error::InvalidState),
 
             // Sign memos for the transaction
             #[cfg(feature = "memo")]
