@@ -68,7 +68,6 @@ getrandom::register_custom_getrandom!(app_getrandom);
 
 // Bind getrandom via nanos_sdk call
 #[no_mangle]
-#[inline]
 pub fn app_getrandom(buff: &mut [u8]) -> Result<(), getrandom::Error> {
     ledger_device_sdk::random::rand_bytes(buff);
     Ok(())
@@ -94,7 +93,7 @@ extern "C" fn sample_main() {
 
     // Initialise and bind globally allocated contexts
     let (engine, ui, event, output) = unsafe {
-        let p = &mut *APP_CTX.as_mut_ptr();
+        let p = &mut *(&raw mut APP_CTX).cast::<AppCtx>();
 
         Engine::init(&mut p.engine, LedgerDriver {}, LedgerRng {});
         Ui::init(&mut p.ui);

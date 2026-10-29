@@ -58,7 +58,8 @@ impl Driver for LedgerDriver {
 /// Fetch fog ID from platform persistent storage
 #[cfg(feature = "nvm")]
 pub fn platform_get_fog_id() -> FogId {
-    let i = unsafe { *FOG.get_ref().get_ref() } as usize;
+    let fog = &raw const FOG;
+    let i = unsafe { *(*fog).get_ref().get_ref() } as usize;
     if i < FOG_IDS.len() {
         FOG_IDS[i]
     } else {
@@ -70,7 +71,8 @@ pub fn platform_get_fog_id() -> FogId {
 #[cfg(feature = "nvm")]
 pub fn platform_set_fog_id(fog_id: &FogId) {
     unsafe {
-        let f = FOG.get_mut();
+        let fog = &raw mut FOG;
+        let f = (*fog).get_mut();
         f.update(&(*fog_id as u32));
     };
 }
@@ -81,13 +83,14 @@ pub fn platform_set_fog_id(fog_id: &FogId) {
 /// Fetch fog ID from local variable
 #[cfg(not(feature = "nvm"))]
 pub fn platform_get_fog_id() -> FogId {
-    unsafe { FOG.assume_init() }
+    let fog = &raw const FOG;
+    unsafe { (*fog).assume_init() }
 }
 
 /// Update fog ID in local variable
 #[cfg(not(feature = "nvm"))]
 pub fn platform_set_fog_id(fog_id: &FogId) {
-    unsafe { FOG.write(*fog_id) };
+    unsafe { (&raw mut FOG).write(MaybeUninit::new(*fog_id)) };
 }
 
 // Global allocator configuration
@@ -115,7 +118,7 @@ pub(crate) mod allocator {
     /// Initialise allocator
     #[inline(never)]
     pub fn init() {
-        unsafe { HEAP.init(HEAP_MEM.as_ptr() as usize, HEAP_SIZE) }
+        unsafe { HEAP.init((&raw mut HEAP_MEM).cast::<u8>() as usize, HEAP_SIZE) }
     }
 
     /// Noop critical section

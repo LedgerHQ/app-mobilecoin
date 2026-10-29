@@ -87,7 +87,7 @@ impl TxSummaryApprover {
             }
 
             // List of operations
-            (Op(n), ButtonEvent::LeftButtonRelease) if n == 0 => self.state = Init,
+            (Op(0), ButtonEvent::LeftButtonRelease) => self.state = Init,
             (Op(n), ButtonEvent::LeftButtonRelease) => self.state = Op(n - 1),
             (Op(n), ButtonEvent::RightButtonRelease) if n + 1 < self.num_outputs => {
                 self.state = Op(n + 1)
@@ -128,7 +128,7 @@ impl TxSummaryApprover {
             (Fee, ButtonEvent::RightButtonRelease) => self.state = Total(0),
 
             // List of totals
-            (Total(n), ButtonEvent::LeftButtonRelease) if n == 0 => self.state = Fee,
+            (Total(0), ButtonEvent::LeftButtonRelease) => self.state = Fee,
             (Total(n), ButtonEvent::LeftButtonRelease) => self.state = Total(n - 1),
             (Total(n), ButtonEvent::RightButtonRelease) if n + 1 < self.num_totals => {
                 self.state = Total(n + 1)
