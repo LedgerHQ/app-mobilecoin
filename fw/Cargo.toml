@@ -15,7 +15,7 @@ name = "MobileCoin"
 curve = [ "ed25519" ]
 path = [ 
     "44'/866'",
-    "13'/",
+    "13'",
 ]
 flags = "0x040"
 
