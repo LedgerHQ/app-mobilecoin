@@ -20,4 +20,4 @@ build-std = [ "core", "compiler_builtins", "alloc" ]
 
 [alias]
 br = "build --release"
-stackcheck = "call-stack --bin ledger-mob-fw --target nanosplus sample_main"
+stackcheck = "call-stack --bin app-mobilecoin --target nanosplus sample_main"
