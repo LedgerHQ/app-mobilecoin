@@ -107,6 +107,19 @@ pub enum State {
     Complete,
 }
 
+impl State {
+    /// Check whether the current state should be considered idle (no current operations or pending approvals)
+    pub fn is_idle(&self) -> bool {
+        matches!(
+            self,
+            State::Init
+                | State::Complete
+                | State::Error
+                | State::Ident(IdentState::Approved | IdentState::Denied)
+        )
+    }
+}
+
 /// [Engine] provides hardware-independent support for MobileCoin wallet operations
 ///
 pub struct Engine<DRV: Driver, RNG: CryptoRngCore = OsRng> {
@@ -190,8 +203,31 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
         #[cfg(feature = "log")]
         log::debug!("event: {:02x?}", evt);
 
-        // Update state digest (only applied for mutating events)
-        if let Some(h) = evt.hash() {
+        // Refuse to replace any type of request while awaiting user approval.
+        // This is checked prior to the digest update so a rejected
+        // event cannot alter the digest bound to the pending approval.
+        match (self.state, evt) {
+            // Allowed (idle) states for TxInit and IdentSign events
+            (s, Event::TxInit { .. } | Event::IdentSign { .. }) if s.is_idle() => (),
+            // Explicitly reject TxInit or IdentSign while approval is pending
+            (
+                State::Pending | State::Ident(IdentState::Pending),
+                Event::TxInit { .. } | Event::IdentSign { .. },
+            ) => return Err(Error::ApprovalPending),
+            // Also reject TxInit or IdentSign from any other states
+            (_, Event::TxInit { .. } | Event::IdentSign { .. }) => return Err(Error::InvalidState),
+            _ => (),
+        }
+
+        // Update state digest (only applied for mutating events, and
+        // never while a transaction or identity request is pending
+        // approval, so an unexpected event from the host cannot alter
+        // the digest bound to the on-screen request)
+        let pending = matches!(
+            self.state,
+            State::Pending | State::Ident(IdentState::Pending)
+        );
+        if let (false, Some(h)) = (pending, evt.hash()) {
             self.digest.update(&h);
         }
 
@@ -286,13 +322,13 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
             // Request identity proof
             #[cfg(feature = "ident")]
             (
-                State::Init | State::Ident(_),
+                s,
                 Event::IdentSign {
                     ident_index,
                     ident_uri,
                     challenge,
                 },
-            ) => {
+            ) if s.is_idle() => {
                 // Setup identity context
                 if self
                     .function
@@ -302,6 +338,9 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                     self.state = State::Error;
                     return Err(Error::Unknown);
                 }
+
+                // Re-seed digest so approval is bound to this request
+                self.digest = TxDigest::from_random(&mut self.rng);
 
                 // Move to pending state
                 self.state = State::Ident(IdentState::Pending);
@@ -328,14 +367,15 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 return r;
             }
 
-            // Initialise transaction with private key and value
+            // Initialise transaction with private key (account index) and the number of rings to be used
+            // NOTE: transactions can only be initialised from idle states (Init, Complete, Error).
             (
-                _,
+                s,
                 Event::TxInit {
                     account_index,
                     num_rings,
                 },
-            ) => {
+            ) if s.is_idle() => {
                 // Set common transaction information
                 self.account_index = *account_index;
                 self.num_rings = *num_rings as usize;
@@ -350,6 +390,9 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 self.function.clear();
                 self.message.clear();
             }
+            // Reject transaction initialization in any other state
+            // NOTE: this is unreachable due to filtering above, but we'll keep the explicit rejection for clarity.
+            (_, Event::TxInit { .. }) => return Err(Error::InvalidState),
 
             // Sign memos for the transaction
             #[cfg(feature = "memo")]
@@ -429,6 +472,11 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 return self.tx_summary_update(evt);
             }
 
+            // Host cancellation of a pending transaction
+            (State::Pending, Event::TxComplete) => {
+                self.deny();
+            }
+
             // Pending user approval (tbd, expect changes when TxSummary lands)
             (State::Pending, _) => {
                 // No change, reply with pending state
@@ -462,7 +510,7 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 Event::TxSetBlinding { .. }
                 | Event::TxAddTxout(..)
                 | Event::TxSign
-                | Event::TxGetKeyImage { .. }
+                | Event::TxGetKeyImage
                 | Event::TxGetResponse { .. },
             ) => {
                 return self.ring_update(evt);
@@ -569,10 +617,23 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
         self.unlocked = false;
     }
 
+    /// Fetch the current state digest, used to bind approvals to
+    /// the request displayed to the user
+    pub fn digest(&self) -> &TxDigest {
+        &self.digest
+    }
+
     /// Approve a pending transaction (advances state to `State::Ready`)
-    pub fn approve(&mut self) {
+    ///
+    /// `expected` is the digest captured when the approval UI was shown,
+    /// if this no longer matches the pending transaction is denied.
+    pub fn approve(&mut self, expected: &TxDigest) {
         if let State::Pending = self.state {
-            self.state = State::Ready;
+            if &self.digest == expected {
+                self.state = State::Ready;
+            } else {
+                self.deny();
+            }
         }
     }
 
@@ -674,15 +735,22 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
     }
 
     /// Approve or deny a pending identity request, updating the [IdentState]
+    ///
+    /// `expected` is the digest captured when the approval UI was shown,
+    /// if this no longer matches the pending request is denied.
     #[cfg(feature = "ident")]
-    pub fn ident_approve(&mut self, approve: bool) {
+    pub fn ident_approve(&mut self, approve: bool, expected: &TxDigest) -> bool {
         if let State::Ident(IdentState::Pending) = self.state {
-            if approve {
+            if approve && &self.digest == expected {
                 self.state = State::Ident(IdentState::Approved);
+                true
             } else {
                 self.function.clear();
                 self.state = State::Ident(IdentState::Denied);
+                false
             }
+        } else {
+            false
         }
     }
 
@@ -971,9 +1039,11 @@ impl<DRV: Driver, RNG: CryptoRngCore> Engine<DRV, RNG> {
                 let mut message = [0u8; 32];
                 let r = summarizer.finalize(*fee, *tombstone_block, &mut message);
 
-                // Write message
-                self.message.clear();
-                let _ = self.message.extend_from_slice(&message);
+                // If the summariser succeeded, write the digest to the message buffer
+                if r.is_ok() {
+                    self.message.clear();
+                    let _ = self.message.extend_from_slice(&message);
+                }
 
                 r
             }
@@ -1112,6 +1182,141 @@ mod test {
         }
     }
 
+    /// Setup an engine with a blind transaction pending approval
+    fn pending_engine(message: &[u8]) -> Engine<TestDriver> {
+        let mut e = Engine::new(TestDriver::new());
+
+        e.update(&Event::TxInit {
+            account_index: 0,
+            num_rings: 1,
+        })
+        .expect("Init transaction");
+
+        e.update(&Event::TxSetMessage(
+            heapless::Vec::from_slice(message).unwrap(),
+        ))
+        .expect("Set message");
+
+        assert_eq!(e.state(), State::Pending);
+
+        e
+    }
+
+    /// A pending transaction cannot be replaced by the host
+    #[test]
+    fn pending_rejects_tx_init() {
+        let mut e = pending_engine(&[0xaa; 32]);
+        let digest = e.digest().clone();
+
+        let r = e.update(&Event::TxInit {
+            account_index: 0,
+            num_rings: 1,
+        });
+        assert_eq!(r, Err(Error::ApprovalPending));
+
+        // Further mutating events are ignored while pending
+        let _ = e.update(&Event::TxSetMessage(
+            heapless::Vec::from_slice(&[0xbb; 32]).unwrap(),
+        ));
+
+        assert_eq!(e.state(), State::Pending);
+        assert_eq!(e.digest(), &digest);
+        assert_eq!(e.message(), Some(&[0xaa; 32][..]));
+
+        // Approval with the captured digest still succeeds
+        e.approve(&digest);
+        assert_eq!(e.state(), State::Ready);
+    }
+
+    /// Approval with a stale digest denies the transaction
+    #[test]
+    fn approve_stale_digest_denies() {
+        let mut e = pending_engine(&[0xaa; 32]);
+
+        e.approve(&TxDigest::new());
+        assert_eq!(e.state(), State::Deny);
+
+        // Ring signing is not available after denial
+        let r = e.update(&Event::TxRingInit {
+            ring_size: RING_SIZE as u8,
+            value: 100,
+            token_id: 0,
+            real_index: 0,
+            subaddress_index: 0,
+            onetime_private_key: None,
+        });
+        assert_eq!(r, Err(Error::UnexpectedEvent));
+    }
+
+    /// The host may cancel (but not replace) a pending transaction
+    #[test]
+    fn pending_tx_complete_cancels() {
+        let mut e = pending_engine(&[0xaa; 32]);
+        let digest = e.digest().clone();
+
+        e.update(&Event::TxComplete).expect("Cancel transaction");
+        assert_eq!(e.state(), State::Deny);
+
+        // Approval following cancellation has no effect
+        e.approve(&digest);
+        assert_eq!(e.state(), State::Deny);
+    }
+
+    /// A pending identity request cannot be replaced by the host
+    #[cfg(feature = "ident")]
+    #[test]
+    fn ident_pending_rejects_ident_sign() {
+        let mut e = Engine::new(TestDriver::new());
+
+        let req = |uri: &str| Event::IdentSign {
+            ident_index: 0,
+            ident_uri: heapless::String::try_from(uri).unwrap(),
+            challenge: heapless::Vec::from_slice(&[0xaa; 32]).unwrap(),
+        };
+
+        e.update(&req("ssh://a.com")).expect("Ident request");
+        assert_eq!(e.state(), State::Ident(IdentState::Pending));
+        let digest = e.digest().clone();
+
+        let r = e.update(&req("ssh://b.com"));
+        assert_eq!(r, Err(Error::ApprovalPending));
+        assert_eq!(
+            e.ident().map(|i| i.identity_uri.as_str()),
+            Some("ssh://a.com")
+        );
+
+        // Approval with a stale digest is a denial
+        e.ident_approve(true, &TxDigest::new());
+        assert_eq!(e.state(), State::Ident(IdentState::Denied));
+
+        // New request, approval with the captured digest succeeds
+        e.update(&req("ssh://a.com")).expect("Ident request");
+        let digest2 = e.digest().clone();
+        assert_ne!(digest, digest2);
+
+        e.ident_approve(true, &digest2);
+        assert_eq!(e.state(), State::Ident(IdentState::Approved));
+    }
+
+    #[test]
+    fn ident_pending_freezes_digest() {
+        let mut e = Engine::new(TestDriver::new());
+        e.update(&Event::IdentSign {
+            ident_index: 0,
+            ident_uri: heapless::String::try_from("ssh://a.com").unwrap(),
+            challenge: heapless::Vec::from_slice(&[0xaa; 32]).unwrap(),
+        })
+        .unwrap();
+        let before = e.digest().clone();
+        assert!(e
+            .update(&Event::TxSetMessage(
+                heapless::Vec::from_slice(&[0xbb; 32]).unwrap(),
+            ))
+            .is_err());
+        assert_eq!(e.digest(), &before);
+        assert!(e.ident_approve(true, &before));
+    }
+
     /// Ensure we're handling unexpected events
     #[test]
     fn invalid_events() {
@@ -1248,7 +1453,7 @@ mod test {
         assert_eq!(r.state(), Some(State::Pending));
 
         // Approve transaction
-        engine.approve();
+        engine.approve(&digest);
 
         // Start ring signing
         let evt = Event::TxRingInit {

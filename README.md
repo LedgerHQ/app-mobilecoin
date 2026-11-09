@@ -31,8 +31,8 @@ End users should install signed and security-audited releases via [Ledger Live](
 
 Side-loading is only supported on `nanosplus` devices with the latest firmware version and should only be used for development purposes.
 
-- Download the latest nanosplus release [here](https://github.com/mobilecoinofficial/ledger-mob/releases/latest/download/ledger-mob-fw-nanosplus.tgz)
-- `tar -xvf ledger-mob-fw-nanosplus.tgz` to extract the firmware package
+- Download the latest nanosplus release [here](https://github.com/mobilecoinofficial/ledger-mob/releases/latest/download/app-mobilecoin-nanosplus.tgz)
+- `tar -xvf app-mobilecoin-nanosplus.tgz` to extract the firmware package
 - `cargo ledger --use-prebuilt [APP.elf] build --load` to install the nanoapp
   - You may need to add the `-f` argument to correctly unload prior releases
 
